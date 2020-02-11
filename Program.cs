@@ -1,10 +1,14 @@
 ﻿using System;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace ChaosScreen
 {
     static class Program
     {
+
+        [DllImport("user32.dll", SetLastError = false)]
+        static extern IntPtr GetDesktopWindow();
         static void ShowScreenSaver()
         {
             var allScreens = Screen.AllScreens;
@@ -78,7 +82,11 @@ namespace ChaosScreen
             }
             else    // No arguments - treat like /c
             {
-                Application.Run(new About());
+                //var screen = new ScreenSaverForm(GetDesktopWindow());
+                //screen.Initialize();
+                //screen.Render();
+                //Application.Run(new About());
+                ShowScreenSaver();
             }
 
         }

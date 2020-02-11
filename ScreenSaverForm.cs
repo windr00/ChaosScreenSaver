@@ -2,11 +2,15 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+
 namespace ChaosScreen
 {
     public partial class ScreenSaverForm
     {
 
+
+        [DllImport("user32.dll", SetLastError = false)]
+        static extern IntPtr GetDesktopWindow();
 
         public RenderForm form;
 
@@ -67,6 +71,8 @@ namespace ChaosScreen
             form.Location = new System.Drawing.Point(0, 0);
 
             this.previewMode = true;
+            this.form.TopMost = false;
+            Cursor.Show();
         }
 
         private void ScreenSaverForm_MouseMove(object sender, MouseEventArgs e)
@@ -96,7 +102,30 @@ namespace ChaosScreen
 
         private void ScreenSaverForm_KeyPress(object sender, KeyPressEventArgs e)
         {
-
+            if (previewMode)
+            {
+                return;
+            }
+            if (e.KeyChar == 'n')
+            {
+                this.next = true;
+            }
+            if (e.KeyChar == 'r')
+            {
+                this.reset = true;
+            }
+            if (e.KeyChar == ' ')
+            {
+                this.pause = !this.pause;
+            }
+            if (e.KeyChar == 'c')
+            {
+                this.center = true;
+            }
+            if (e.KeyChar == 'l')
+            {
+                this.loop = !this.loop;
+            }
         }
 
         private void ScreenSaverForm_KeyDown(object sender, KeyEventArgs e)

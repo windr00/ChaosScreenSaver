@@ -42,31 +42,38 @@ namespace ChaosScreen
             }
 
         }
-        private  Device device;
+        private Device device;
 
 
         private const int iterations = 600;
         private const int steps = 400;
         private const double deltaPerStep = 1e-5;
         private const double deltaMinimum = 1e-7;
-        private  VertexBuffer gpuVertices;
-        private  Vertex[] vertexArray;
-        private  VertexDeclaration vertexDecl;
-        private  float plotScale = 0.25f;
-        private  float plotX = 0.0f;
-        private  float plotY = 0.0f;
-        private  double t = double.MaxValue;
-        private  int width;
-        private  int height;
+        private VertexBuffer gpuVertices;
+        private Vertex[] vertexArray;
+        private VertexDeclaration vertexDecl;
+        private float plotScale = 0.5f;
+        private float plotX = 0.0f;
+        private float plotY = 0.0f;
+        private double t = double.MaxValue;
+        private int width;
+        private int height;
 
-        private  VertexBuffer gpuRectangle;
-        private  VertexDeclaration rectangleDecl;
-
+        private VertexBuffer gpuRectangle;
+        private VertexDeclaration rectangleDecl;
+        Random rand_int;
         private const double tStart = -3.0;
         private const double tEnd = 3.0;
-        private  string equationCode = "";
-        public  void Initialize()
+        private string equationCode = "";
+        private bool next = false;
+        private bool reset = false;
+        private bool pause = false;
+        private bool center = false;
+        private bool loop = false;
+        public void Initialize()
         {
+            var unix = (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
+            rand_int = new Random(unix);
             var parameter = new PresentParameters(form.ClientSize.Width, form.ClientSize.Height);
             parameter.MultiSampleType = MultisampleType.EightSamples;
             parameter.PresentationInterval = PresentInterval.One;
@@ -79,8 +86,8 @@ namespace ChaosScreen
             gpuVertices.Lock(0, 0, LockFlags.None).WriteRange(vertexArray);
             gpuVertices.Unlock();
             gpuRectangle = new VertexBuffer(device, 6 * 12, Usage.WriteOnly, VertexFormat.None, Pool.Managed);
-            
-            device.SetRenderState(RenderState.PointSize, 2.0f);
+
+            device.SetRenderState(RenderState.PointSize, 1.0f);
             device.SetRenderState(RenderState.MultisampleAntialias, true);
             device.SetRenderState(RenderState.AlphaBlendEnable, true);
 
@@ -99,10 +106,9 @@ namespace ChaosScreen
             vertexDecl = new VertexDeclaration(device, vertexElems);
         }
 
-         void RandParams(ref double[] parameters)
+        void RandParams(ref double[] parameters)
         {
-            var unix = (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
-            var rand_int = new Random(unix);
+            
             for (int i = 0; i < parameters.Length; i++)
             {
                 int r = rand_int.Next(0, 3);
@@ -121,7 +127,7 @@ namespace ChaosScreen
             }
         }
 
-         string ParamsToString(ref double[] parameters)
+        string ParamsToString(ref double[] parameters)
         {
             char[] base27 = "_ABCDEFGHIJKLMNOPQRSTUVWXYZ".ToCharArray();
             int a = 0;
@@ -141,7 +147,7 @@ namespace ChaosScreen
             return result;
         }
 
-         void SIGN_OR_SKIP(int i, string x, ref StringBuilder ss, ref bool isFirst, double[] parameters)
+        void SIGN_OR_SKIP(int i, string x, ref StringBuilder ss, ref bool isFirst, double[] parameters)
         {
             if (parameters[i] != 0.0)
             {
@@ -168,7 +174,30 @@ namespace ChaosScreen
             }
         }
 
-         string MakeEquationString(double[] parameters)
+
+        static void StringToParams(string str, ref double[] parameters)
+        {
+            for (int i = 0; i < parameters.Length / 3; ++i)
+            {
+                int a = 0;
+                char c = (i < str.Length ? str[i] : '_');
+                if (c >= 'A' && c <= 'Z')
+                {
+                    a = (int)(c - 'A') + 1;
+                }
+                else if (c >= 'a' && c <= 'z')
+                {
+                    a = (int)(c - 'a') + 1;
+                }
+                parameters[i * 3 + 2] = (double)(a % 3) - 1.0;
+                a /= 3;
+                parameters[i * 3 + 1] = (double)(a % 3) - 1.0;
+                a /= 3;
+                parameters[i * 3 + 0] = (double)(a % 3) - 1.0;
+            }
+        }
+
+        string MakeEquationString(double[] parameters)
         {
             StringBuilder ss = new StringBuilder();
             bool isFirst = true;
@@ -185,7 +214,37 @@ namespace ChaosScreen
             return ss.ToString();
         }
 
-         void GenerateNew(out double t, ref double[] parameters)
+        const float FLT_MAX = float.MaxValue;
+        void CenterPlot(ref List<Vector2> history)
+        {
+            float min_x = FLT_MAX;
+            float max_x = -FLT_MAX;
+            float min_y = FLT_MAX;
+            float max_y = -FLT_MAX;
+            for (int i = 0; i < history.Count; ++i)
+            {
+                var point = history[i];
+                if (float.IsNaN(point.X) && float.IsNaN(point.Y))
+                {
+                    continue;
+                }
+                min_x = Math.Min(min_x, point.X);
+                max_x = Math.Max(max_x, point.X);
+                min_y = Math.Min(min_y, point.Y);
+                max_y = Math.Max(max_y, point.Y);
+            }
+            max_x = Math.Min(max_x, 4.0f);
+            max_y = Math.Min(max_y, 4.0f);
+            min_x = Math.Max(min_x, -4.0f);
+            min_y = Math.Max(min_y, -4.0f);
+            plotX = (max_x + min_x) * 0.5f;
+            plotY = (max_y + min_y) * 0.5f;
+            plotScale = 1.0f / Math.Max(Math.Max(max_x - min_x, max_y - min_y) * 0.6f, 0.1f);
+        }
+
+        private static readonly string[] Equations = { "CODEPA", "VKDI_J", "DPPREG", "RMCQDI",  "LDNMGQ", "JJPVDN", "HELPME", "I_CNJJ", "VJQZJG", "MMJKMA"};
+
+        void GenerateNew(out double t, ref double[] parameters)
         {
             var unix = (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
             var rand_int = new Random(unix);
@@ -209,14 +268,14 @@ namespace ChaosScreen
             Console.WriteLine(equationString);
         }
 
-         void ResetPlot()
+        void ResetPlot()
         {
-            plotScale = 0.25f;
+            plotScale = 0.5f;
             plotX = 0.0f;
             plotY = 0.0f;
         }
 
-        private  Color GetRandColor(int i)
+        private Color GetRandColor(int i)
         {
             i += 1;
             int r = Math.Min(255, 50 + (i * 11909) % 256);
@@ -225,7 +284,7 @@ namespace ChaosScreen
             return new Color(r, g, b, 16);
         }
 
-        private  Vector2 ToScreen(double x, double y)
+        private Vector2 ToScreen(double x, double y)
         {
             float s = plotScale * (float)(height / 2);
             float nx = (float)width * 0.5f + ((float)x - plotX) * s;
@@ -233,7 +292,7 @@ namespace ChaosScreen
             return new Vector2(nx, ny);
         }
 
-        public  void Render()
+        public void Render()
         {
             double[] parameters = new double[18];
             for (int i = 0; i < vertexArray.Length; i++)
@@ -246,17 +305,49 @@ namespace ChaosScreen
             {
                 history.Add(new Vector2());
             }
+            var looper = 0;
             RenderLoop.Run(form, () =>
             {
-                if (t > tEnd)
+                if (pause)
                 {
-                    ResetPlot();
-                    RandParams(ref parameters);
-                    GenerateNew(out t, ref parameters);
+                    return;
+                }
+                if (t > tEnd || next)
+                {
+                    if (loop && !next)
+                    {
+                        t = tStart;
+                    }
+                    else
+                    {
+                        next = false;
+                        ResetPlot();
+                        if (looper < Equations.Length)
+                        {
+                            StringToParams(Equations[looper], ref parameters);
+                            looper++;
+                        }
+                        else
+                        {
+                            RandParams(ref parameters);
+                        }
+                        GenerateNew(out t, ref parameters);
+                    }
+                } else if (reset)
+                {
+                    reset = false;
+                    t = tStart;
+                }
+                else if (center)
+                {
+                    center = false;
+                    device.Clear(ClearFlags.Target, Color.Black, 0.0f, 0);
+                    CenterPlot(ref history);
                 }
 
                 //TODO : fade colors;
                 device.BeginScene();
+                device.SetRenderState(RenderState.AlphaBlendEnable, true);
                 device.SetRenderState(RenderState.SourceBlendAlpha, Blend.One);//D3DBLEND_ONE
                 device.SetRenderState(RenderState.DestinationBlendAlpha, Blend.One);//D3DBLEND_ONE
                 device.SetRenderState(RenderState.BlendOperationAlpha, BlendOperation.ReverseSubtract);
@@ -292,7 +383,7 @@ namespace ChaosScreen
                             float dx = history[iter].X - (float)x;
                             float dy = history[iter].Y - (float)y;
                             double dist = (double)(500.0f * Math.Sqrt(dx * dx + dy * dy));
-                            
+
                             if (!double.IsNaN(dist))
                             {
                                 rollingDelta = Math.Min(rollingDelta, Math.Max(delta / (dist + 1e-5), deltaMinimum));
@@ -312,11 +403,13 @@ namespace ChaosScreen
                     }
                 }
 
-
                 gpuVertices.Lock(0, 0, LockFlags.None).WriteRange(vertexArray);
                 gpuVertices.Unlock();
+                device.SetRenderState(RenderState.SourceBlendAlpha, Blend.One);//D3DBLEND_ONE
+                device.SetRenderState(RenderState.DestinationBlendAlpha, Blend.Zero);//D3DBLEND_ONE
+                device.SetRenderState(RenderState.BlendOperationAlpha, BlendOperation.Maximum);
                 device.SetRenderState(RenderState.SourceBlend, Blend.One);//D3DBLEND_ONE
-                device.SetRenderState(RenderState.DestinationBlend, Blend.One);//D3DBLEND_ONE
+                device.SetRenderState(RenderState.DestinationBlend, Blend.Zero);//D3DBLEND_ONE
                 device.SetRenderState(RenderState.BlendOperation, BlendOperation.Maximum);
 
                 device.SetStreamSource(0, gpuVertices, 0, 12);
